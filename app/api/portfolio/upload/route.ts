@@ -3,6 +3,10 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import * as XLSX from 'xlsx';
+import { rateLimit, tooManyRequests } from '@/lib/rate-limit';
+
+const MAX_FILE_BYTES = 2 * 1024 * 1024; // 2 MB
+const MAX_ROWS = 1000;
 
 export async function POST(request: Request) {
   try {
@@ -10,9 +14,15 @@ export async function POST(request: Request) {
     if (!session?.user) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
     const userId = (session.user as any)?.id;
 
+    const rl = rateLimit(request, 'upload', 10, 5 * 60 * 1000);
+    if (!rl.ok) return tooManyRequests(rl.retryAfter);
+
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
     if (!file) return NextResponse.json({ error: 'Ficheiro em falta.' }, { status: 400 });
+    if (file.size > MAX_FILE_BYTES) {
+      return NextResponse.json({ error: 'O ficheiro excede o tamanho máximo permitido (2 MB).' }, { status: 413 });
+    }
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const workbook = XLSX.read(buffer, { type: 'buffer' });
@@ -23,6 +33,9 @@ export async function POST(request: Request) {
 
     if (rows.length === 0) {
       return NextResponse.json({ error: 'Nenhum dado encontrado no ficheiro.' }, { status: 400 });
+    }
+    if (rows.length > MAX_ROWS) {
+      return NextResponse.json({ error: `O ficheiro tem demasiadas linhas (máximo ${MAX_ROWS}).` }, { status: 413 });
     }
 
     const parsed = rows.map((row: any) => ({

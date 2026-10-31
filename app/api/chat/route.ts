@@ -1,7 +1,8 @@
 export const dynamic = 'force-dynamic';
 import { auth } from '@/auth';
-import { prisma } from '@/lib/prisma';
+import { prisma, withDbRetry } from '@/lib/prisma';
 import { getMultipleQuotes } from '@/lib/yahoo-finance';
+import { rateLimit, tooManyRequests } from '@/lib/rate-limit';
 
 export async function POST(request: Request) {
   try {
@@ -11,14 +12,61 @@ export async function POST(request: Request) {
     }
     const userId = (session.user as any)?.id;
 
+    const rl = rateLimit(request, 'chat', 30, 60 * 1000);
+    if (!rl.ok) return tooManyRequests(rl.retryAfter);
+
     const body = await request.json();
-    const { message, history } = body ?? {};
-    if (!message) {
+    let { message, history, conversationId } = body ?? {};
+    if (!message || typeof message !== 'string') {
       return new Response(JSON.stringify({ error: 'Mensagem em falta.' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+    // Limita o tamanho da mensagem para evitar abuso/custo excessivo.
+    message = message.slice(0, 4000);
+
+    // Modo com conversa persistida: valida a propriedade e carrega o histórico
+    // a partir da base de dados (ignora o histórico enviado pelo cliente, para
+    // que a conversa fique sincronizada entre dispositivos).
+    let convId: string | null = null;
+    let isFirstMessage = false;
+    let convTitle = '';
+    if (conversationId && typeof conversationId === 'string') {
+      const conv = await withDbRetry(() =>
+        prisma.chatConversation.findFirst({ where: { id: conversationId, userId }, select: { id: true, title: true } })
+      );
+      if (!conv) {
+        return new Response(JSON.stringify({ error: 'Conversa não encontrada.' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+      }
+      convId = conv.id;
+      convTitle = conv.title;
+      const dbMsgs = await withDbRetry(() =>
+        prisma.chatMessage.findMany({ where: { conversationId: convId }, orderBy: { createdAt: 'asc' }, take: 40 })
+      );
+      isFirstMessage = dbMsgs.length === 0;
+      history = dbMsgs.slice(-10).map((m: any) => ({
+        role: m?.role === 'assistant' ? 'assistant' : 'user',
+        content: typeof m?.content === 'string' ? m.content.slice(0, 4000) : '',
+      }));
+    } else {
+      // Normaliza e limita o histórico enviado pelo cliente (modo sem conversa).
+      if (!Array.isArray(history)) history = [];
+      history = history.slice(-10).map((m: any) => ({
+        role: m?.role === 'assistant' ? 'assistant' : 'user',
+        content: typeof m?.content === 'string' ? m.content.slice(0, 4000) : '',
+      }));
     }
 
     // Save user message
-    await prisma.chatMessage.create({ data: { userId, role: 'user', content: message } });
+    await prisma.chatMessage.create({ data: { userId, role: 'user', content: message, conversationId: convId } });
+
+    // Atualiza a conversa: data de atividade e, na primeira mensagem, o título.
+    if (convId) {
+      const newTitle = isFirstMessage && (!convTitle || convTitle === 'Nova conversa')
+        ? message.slice(0, 60)
+        : undefined;
+      await withDbRetry(() =>
+        prisma.chatConversation.update({ where: { id: convId as string }, data: { updatedAt: new Date(), ...(newTitle ? { title: newTitle } : {}) } })
+      ).catch(() => { /* best-effort */ });
+    }
 
     // Get portfolio context
     const [profile, assets] = await Promise.all([
@@ -55,7 +103,7 @@ Regras importantes:
 
     const messages = [
       { role: 'system', content: systemPrompt },
-      ...((history ?? []).slice(-10).map((m: any) => ({ role: m?.role ?? 'user', content: m?.content ?? '' }))),
+      ...history,
       { role: 'user', content: message },
     ];
 
@@ -99,7 +147,10 @@ Regras importantes:
                 if (data === '[DONE]') {
                   // Save assistant response
                   if (fullResponse) {
-                    await prisma.chatMessage.create({ data: { userId, role: 'assistant', content: fullResponse } });
+                    await prisma.chatMessage.create({ data: { userId, role: 'assistant', content: fullResponse, conversationId: convId } });
+                    if (convId) {
+                      await prisma.chatConversation.update({ where: { id: convId as string }, data: { updatedAt: new Date() } }).catch(() => {});
+                    }
                   }
                   controller.enqueue(encoder.encode('data: [DONE]\n\n'));
                   return;
@@ -116,7 +167,10 @@ Regras importantes:
             }
           }
           if (fullResponse) {
-            await prisma.chatMessage.create({ data: { userId, role: 'assistant', content: fullResponse } });
+            await prisma.chatMessage.create({ data: { userId, role: 'assistant', content: fullResponse, conversationId: convId } });
+            if (convId) {
+              await prisma.chatConversation.update({ where: { id: convId as string }, data: { updatedAt: new Date() } }).catch(() => {});
+            }
           }
         } catch (error) {
           console.error('Stream error:', error);

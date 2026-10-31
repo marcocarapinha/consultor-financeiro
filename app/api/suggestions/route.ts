@@ -3,12 +3,16 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/prisma';
 import { getMultipleQuotes } from '@/lib/yahoo-finance';
+import { rateLimit, tooManyRequests } from '@/lib/rate-limit';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const session = await auth();
     if (!session?.user) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
     const userId = (session.user as any)?.id;
+
+    const rl = rateLimit(request, 'suggestions', 15, 5 * 60 * 1000);
+    if (!rl.ok) return tooManyRequests(rl.retryAfter);
 
     const [profile, assets] = await Promise.all([
       prisma.riskProfile.findUnique({ where: { userId } }),

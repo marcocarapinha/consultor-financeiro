@@ -11,6 +11,11 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   images: { unoptimized: true },
+  // Dev chunk URLs are not content-hashed, so a cached copy outlives an edit.
+  async headers() {
+    if (process.env.NODE_ENV !== 'development') return [];
+    return [{ source: '/_next/static/:path*', headers: [{ key: 'Cache-Control', value: 'no-store, must-revalidate' }] }];
+  },
   // Next 16 BLOCKS unlisted origins on /_next/* and /__nextjs* in dev — including the /_next/hmr
   // WEBSOCKET upgrade, and Turbopack gates client module wiring on that socket, so a blocked origin
   // means the page renders but never hydrates, with no console error (the block writes a raw
@@ -21,7 +26,7 @@ const nextConfig = {
   // the platform's browser checks on the pod browse via 127.0.0.1. Enumerated hosts, never a
   // wildcard: every conversation previews under the same parent domain and serves content its own
   // author controls, so `**.<domain>` would let any UNRELATED app's preview reach this dev server.
-  allowedDevOrigins: ['127.0.0.1', 'ccab39ba7.na111.preview.abacusai.app', '553a334e5.na111.preview.abacusai.app'],
+  allowedDevOrigins: ['127.0.0.1', 'ccab39ba7.na111.preview.abacusai.app', '553a334e5.na111.preview.abacusai.app', 'd66b36de6.na111.preview.abacusai.app'],
 };
 
 const fs = require('fs');
