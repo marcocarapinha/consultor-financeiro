@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { prisma } from '@/lib/prisma';
+import { prisma, withDbRetry } from '@/lib/prisma';
 import { getMultipleQuotes } from '@/lib/yahoo-finance';
 
 export async function GET() {
@@ -10,10 +10,12 @@ export async function GET() {
     if (!session?.user) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
     const userId = (session.user as any)?.id;
 
-    const assets = await prisma.portfolioAsset.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-    });
+    const assets = await withDbRetry(() =>
+      prisma.portfolioAsset.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+      })
+    );
 
     if ((assets?.length ?? 0) === 0) {
       return NextResponse.json({ assets: [], totalValue: 0, dailyChange: 0, dailyChangePercent: 0, quotes: {} });
@@ -89,21 +91,25 @@ export async function POST(request: Request) {
     if (!newAssets || !Array.isArray(newAssets) || newAssets.length === 0) {
       return NextResponse.json({ error: 'Dados de ativos em falta.' }, { status: 400 });
     }
+    if (newAssets.length > 500) {
+      return NextResponse.json({ error: 'Demasiados ativos num único pedido (máximo 500).' }, { status: 413 });
+    }
 
+    const cap = (v: any, n: number) => (typeof v === 'string' ? v.slice(0, n) : v);
     const created = [];
     for (const a of newAssets) {
       const asset = await prisma.portfolioAsset.create({
         data: {
           userId,
-          name: a?.name ?? '',
-          ticker: (a?.ticker ?? '').toUpperCase(),
+          name: cap(a?.name, 120) ?? '',
+          ticker: cap((a?.ticker ?? '').toUpperCase(), 20),
           quantity: parseFloat(a?.quantity ?? '0') || 0,
           avgPrice: parseFloat(a?.avgPrice ?? '0') || 0,
-          currency: a?.currency ?? 'EUR',
+          currency: cap(a?.currency ?? 'EUR', 10),
           purchaseDate: a?.purchaseDate ? new Date(a.purchaseDate) : null,
-          broker: a?.broker ?? null,
-          sector: a?.sector ?? null,
-          assetClass: a?.assetClass ?? null,
+          broker: cap(a?.broker, 120) ?? null,
+          sector: cap(a?.sector, 80) ?? null,
+          assetClass: cap(a?.assetClass, 80) ?? null,
         },
       });
       created.push(asset);
@@ -113,6 +119,39 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error('Portfolio create error:', error);
     return NextResponse.json({ error: 'Erro ao adicionar ativos.' }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const session = await auth();
+    if (!session?.user) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
+    const userId = (session.user as any)?.id;
+
+    const body = await request.json();
+    const { id, ...fields } = body ?? {};
+    if (!id) return NextResponse.json({ error: 'ID do ativo em falta.' }, { status: 400 });
+
+    const existing = await prisma.portfolioAsset.findFirst({ where: { id, userId } });
+    if (!existing) return NextResponse.json({ error: 'Ativo não encontrado.' }, { status: 404 });
+
+    const cap = (v: any, n: number) => (typeof v === 'string' ? v.slice(0, n) : v);
+    const data: any = {};
+    if (fields.name !== undefined) data.name = cap(fields.name, 120) ?? '';
+    if (fields.ticker !== undefined) data.ticker = cap((fields.ticker ?? '').toUpperCase(), 20);
+    if (fields.quantity !== undefined) data.quantity = parseFloat(fields.quantity) || 0;
+    if (fields.avgPrice !== undefined) data.avgPrice = parseFloat(fields.avgPrice) || 0;
+    if (fields.currency !== undefined) data.currency = cap(fields.currency ?? 'EUR', 10);
+    if (fields.purchaseDate !== undefined) data.purchaseDate = fields.purchaseDate ? new Date(fields.purchaseDate) : null;
+    if (fields.broker !== undefined) data.broker = cap(fields.broker, 120) || null;
+    if (fields.sector !== undefined) data.sector = cap(fields.sector, 80) || null;
+    if (fields.assetClass !== undefined) data.assetClass = cap(fields.assetClass, 80) || null;
+
+    const updated = await prisma.portfolioAsset.update({ where: { id }, data });
+    return NextResponse.json({ asset: updated });
+  } catch (error: any) {
+    console.error('Portfolio update error:', error);
+    return NextResponse.json({ error: 'Erro ao atualizar ativo.' }, { status: 500 });
   }
 }
 

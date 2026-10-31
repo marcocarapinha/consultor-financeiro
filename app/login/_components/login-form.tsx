@@ -9,12 +9,24 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { TrendingUp, Mail, Lock, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
+import { GoogleIcon } from '@/components/google-icon';
 
 export function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const router = useRouter();
+
+  const handleGoogle = async () => {
+    setGoogleLoading(true);
+    try {
+      await signIn('google', { redirectTo: '/dashboard' });
+    } catch {
+      toast.error('Ocorreu um erro ao iniciar sessão com o Google.');
+      setGoogleLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,6 +64,28 @@ export function LoginForm() {
             <CardDescription>Aceda à sua carteira de investimentos</CardDescription>
           </CardHeader>
           <CardContent>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full mb-4"
+              onClick={handleGoogle}
+              disabled={googleLoading || loading}
+            >
+              {googleLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : (
+                <GoogleIcon className="w-4 h-4 mr-2" />
+              )}
+              Continuar com Google
+            </Button>
+            <div className="relative my-4">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-border" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">ou</span>
+              </div>
+            </div>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
@@ -69,7 +103,15 @@ export function LoginForm() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Password</Label>
+                  <Link
+                    href="/forgot-password"
+                    className="text-xs text-primary hover:underline font-medium"
+                  >
+                    Esqueceu a password?
+                  </Link>
+                </div>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
@@ -91,6 +133,9 @@ export function LoginForm() {
             <p className="text-center text-sm text-muted-foreground mt-4">
               Não tem conta?{' '}
               <Link href="/signup" className="text-primary hover:underline font-medium">Criar conta</Link>
+            </p>
+            <p className="text-center text-xs text-muted-foreground mt-3">
+              <Link href="/privacy" className="hover:underline">Política de Privacidade</Link>
             </p>
           </CardContent>
         </Card>

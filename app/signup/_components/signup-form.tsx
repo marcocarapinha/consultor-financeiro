@@ -9,18 +9,30 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { TrendingUp, Mail, Lock, User, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
+import { GoogleIcon } from '@/components/google-icon';
 
 export function SignupForm() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const router = useRouter();
+
+  const handleGoogle = async () => {
+    setGoogleLoading(true);
+    try {
+      await signIn('google', { redirectTo: '/dashboard' });
+    } catch {
+      toast.error('Ocorreu um erro ao criar conta com o Google.');
+      setGoogleLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password.length < 6) {
-      toast.error('A password deve ter pelo menos 6 caracteres.');
+    if (password.length < 8) {
+      toast.error('A password deve ter pelo menos 8 caracteres.');
       return;
     }
     setLoading(true);
@@ -64,6 +76,28 @@ export function SignupForm() {
             <CardDescription>Comece a gerir a sua carteira de investimentos</CardDescription>
           </CardHeader>
           <CardContent>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full mb-4"
+              onClick={handleGoogle}
+              disabled={googleLoading || loading}
+            >
+              {googleLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : (
+                <GoogleIcon className="w-4 h-4 mr-2" />
+              )}
+              Continuar com Google
+            </Button>
+            <div className="relative my-4">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-border" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">ou</span>
+              </div>
+            </div>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="name">Nome</Label>
@@ -102,12 +136,12 @@ export function SignupForm() {
                   <Input
                     id="password"
                     type="password"
-                    placeholder="Mínimo 6 caracteres"
+                    placeholder="Mínimo 8 caracteres"
                     value={password}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
                     className="pl-10"
                     required
-                    minLength={6}
+                    minLength={8}
                   />
                 </div>
               </div>
@@ -119,6 +153,10 @@ export function SignupForm() {
             <p className="text-center text-sm text-muted-foreground mt-4">
               Já tem conta?{' '}
               <Link href="/login" className="text-primary hover:underline font-medium">Iniciar sessão</Link>
+            </p>
+            <p className="text-center text-xs text-muted-foreground mt-3">
+              Ao criar conta, aceita a nossa{' '}
+              <Link href="/privacy" className="hover:underline">Política de Privacidade</Link>.
             </p>
           </CardContent>
         </Card>

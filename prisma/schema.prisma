@@ -25,6 +25,8 @@ model User {
   assets        PortfolioAsset[]
   snapshots     PortfolioSnapshot[]
   chatMessages  ChatMessage[]
+  chatConversations ChatConversation[]
+  alerts        PriceAlert[]
 }
 
 model Account {
@@ -108,13 +110,57 @@ model PortfolioSnapshot {
   @@index([userId, date])
 }
 
-model ChatMessage {
+model QuoteCache {
+  ticker        String   @id
+  name          String?
+  price         Float
+  previousClose Float
+  currency      String   @default("USD")
+  updatedAt     DateTime @updatedAt @default(now())
+}
+
+model PriceAlert {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticker      String
+  name        String?
+  // PRICE_ABOVE, PRICE_BELOW, GAIN_PCT, LOSS_PCT
+  type        String
+  threshold   Float
+  active      Boolean  @default(true)
+  triggered   Boolean  @default(false)
+  triggeredAt DateTime?
+  lastValue   Float?
+  note        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model ChatConversation {
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String   @default("Nova conversa")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  messages  ChatMessage[]
+
+  @@index([userId, updatedAt])
+}
+
+model ChatMessage {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversationId String?
+  conversation   ChatConversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   role      String   // user, assistant
   content   String
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
+  @@index([conversationId, createdAt])
 }

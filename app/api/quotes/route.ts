@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { getMultipleQuotes } from '@/lib/yahoo-finance';
-import { prisma } from '@/lib/prisma';
+import { prisma, withDbRetry } from '@/lib/prisma';
 
 export async function GET() {
   try {
@@ -11,7 +11,9 @@ export async function GET() {
     const userId = (session.user as any)?.id;
     if (!userId) return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
 
-    const assets = await prisma.portfolioAsset.findMany({ where: { userId } });
+    const assets = await withDbRetry(() =>
+      prisma.portfolioAsset.findMany({ where: { userId } })
+    );
     if ((assets?.length ?? 0) === 0) {
       return NextResponse.json({ quotes: [], lastUpdated: new Date().toISOString() });
     }

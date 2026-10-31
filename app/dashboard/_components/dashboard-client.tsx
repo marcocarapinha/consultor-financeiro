@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
-import { TrendingUp, LogOut, RefreshCw, MessageCircle, Briefcase, Lightbulb, Menu, X } from 'lucide-react';
+import { TrendingUp, LogOut, RefreshCw, MessageCircle, Briefcase, Lightbulb, Menu, X, Bell, BellRing } from 'lucide-react';
 import { PortfolioSummary } from './portfolio-summary';
 import { AssetTable } from './asset-table';
 import { PortfolioChart } from './portfolio-chart';
@@ -10,6 +10,8 @@ import { AllocationChart } from './allocation-chart';
 import { TopMovers } from './top-movers';
 import { BenchmarkComparison } from './benchmark-comparison';
 import { SuggestionsPanel } from './suggestions-panel';
+import { AlertsPanel } from './alerts-panel';
+import { MarketNews } from './market-news';
 import { ChatPanel } from './chat-panel';
 import { toast } from 'sonner';
 
@@ -22,8 +24,9 @@ export function DashboardClient({ userName, riskProfile }: DashboardClientProps)
   const [portfolio, setPortfolio] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showChat, setShowChat] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'portfolio' | 'suggestions'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'portfolio' | 'suggestions' | 'alerts'>('dashboard');
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [triggeredAlerts, setTriggeredAlerts] = useState(0);
 
   const fetchPortfolio = useCallback(async () => {
     try {
@@ -63,6 +66,7 @@ export function DashboardClient({ userName, riskProfile }: DashboardClientProps)
             {[
               { key: 'dashboard', label: 'Dashboard', icon: TrendingUp },
               { key: 'portfolio', label: 'Carteira', icon: Briefcase },
+              { key: 'alerts', label: 'Alertas', icon: Bell },
               { key: 'suggestions', label: 'Sugestões IA', icon: Lightbulb },
             ].map((tab: any) => (
               <Button
@@ -77,6 +81,14 @@ export function DashboardClient({ userName, riskProfile }: DashboardClientProps)
             ))}
           </nav>
           <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" onClick={() => setActiveTab('alerts')} className="relative" title="Alertas">
+              {triggeredAlerts > 0 ? <BellRing className="w-5 h-5 text-primary" /> : <Bell className="w-5 h-5" />}
+              {triggeredAlerts > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-white text-[10px] font-bold flex items-center justify-center">
+                  {triggeredAlerts}
+                </span>
+              )}
+            </Button>
             <Button variant="ghost" size="icon" onClick={() => setShowChat(!showChat)} className="relative">
               <MessageCircle className="w-5 h-5" />
             </Button>
@@ -97,6 +109,7 @@ export function DashboardClient({ userName, riskProfile }: DashboardClientProps)
             {[
               { key: 'dashboard', label: 'Dashboard', icon: TrendingUp },
               { key: 'portfolio', label: 'Carteira', icon: Briefcase },
+              { key: 'alerts', label: 'Alertas', icon: Bell },
               { key: 'suggestions', label: 'Sugestões', icon: Lightbulb },
             ].map((tab: any) => (
               <Button
@@ -131,10 +144,14 @@ export function DashboardClient({ userName, riskProfile }: DashboardClientProps)
                 <TopMovers assets={portfolio?.assets ?? []} />
                 <BenchmarkComparison />
               </div>
+              <MarketNews />
             </div>
           )}
           {activeTab === 'portfolio' && (
-            <PortfolioManager onUpdate={fetchPortfolio} />
+            <PortfolioManager assets={portfolio?.assets ?? []} loading={loading} onUpdate={fetchPortfolio} />
+          )}
+          {activeTab === 'alerts' && (
+            <AlertsPanel assets={portfolio?.assets ?? []} onCountChange={setTriggeredAlerts} />
           )}
           {activeTab === 'suggestions' && (
             <SuggestionsPanel />
@@ -153,12 +170,14 @@ export function DashboardClient({ userName, riskProfile }: DashboardClientProps)
 }
 
 // Inline PortfolioManager to keep it in the same batch
-function PortfolioManager({ onUpdate }: { onUpdate: () => void }) {
+function PortfolioManager({ assets, loading, onUpdate }: { assets: any[]; loading: boolean; onUpdate: () => void }) {
   return (
-    <div>
+    <div className="space-y-6">
+      <HoldingsEditor assets={assets} loading={loading} onUpdate={onUpdate} />
       <PortfolioManagementContent onUpdate={onUpdate} />
     </div>
   );
 }
 
 import { PortfolioManagementContent } from './portfolio-management';
+import { HoldingsEditor } from './holdings-editor';

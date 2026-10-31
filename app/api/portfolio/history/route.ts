@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { prisma } from '@/lib/prisma';
+import { prisma, withDbRetry } from '@/lib/prisma';
 import { getHistoricalData, getMultipleQuotes } from '@/lib/yahoo-finance';
 
 export async function GET(request: Request) {
@@ -13,7 +13,9 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const period = searchParams.get('period') ?? '1M';
 
-    const assets = await prisma.portfolioAsset.findMany({ where: { userId } });
+    const assets = await withDbRetry(() =>
+      prisma.portfolioAsset.findMany({ where: { userId } })
+    );
     if ((assets?.length ?? 0) === 0) {
       return NextResponse.json({ history: [] });
     }
